@@ -327,20 +327,27 @@ export const tauriClient = (opts: TauriClientOptions) => {
               await storage.setItem(localCacheName, JSON.stringify(context.data));
             }
 
-            // Detect social / generic-oauth sign-in responses that include
-            // an authorization URL. We check the URL instead of the
-            // `redirect` flag because our init hook sets
+            // Detect social / generic-oauth sign-in AND account-linking
+            // responses that include an authorization URL. We check the URL
+            // instead of the `redirect` flag because our init hook sets
             // `disableRedirect: true` on these requests (to stop Better
             // Auth's Vue client from window.location-navigating the Tauri
             // webview), which causes the server to respond with
             // `redirect: false`. The presence of `url` is the reliable
             // signal that this is an OAuth start response.
+            //
+            // `/oauth2/link` (generic-oauth account linking) has no
+            // `disableRedirect` in its body schema and always responds
+            // `redirect: true` — the URL-presence check covers it the same
+            // way, and we neutralize the redirect below before the base
+            // client can navigate the webview.
             const requestURL = context.request.url.toString();
             const isSignInRedirect =
               typeof context.data?.url === "string" &&
               (requestURL.includes("/sign-in/social") ||
                 requestURL.includes("/sign-in/oauth2") ||
-                requestURL.includes("/link-social"));
+                requestURL.includes("/link-social") ||
+                requestURL.includes("/oauth2/link"));
 
             if (!isSignInRedirect) return;
 
