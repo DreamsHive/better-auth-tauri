@@ -2,6 +2,7 @@ import type {
   BetterAuthClientPlugin,
   ClientStore,
 } from "better-auth/client";
+import type { BetterFetchPlugin } from "@better-fetch/fetch";
 import {
   parseSetCookieHeader,
   SECURE_COOKIE_PREFIX,
@@ -70,6 +71,11 @@ export interface TauriClientOptions {
    */
   refetchOnReconnect?: boolean;
 }
+
+export type TauriClientPlugin = BetterAuthClientPlugin & {
+  id: "tauri";
+  fetchPlugins: BetterFetchPlugin[];
+};
 
 interface StoredCookie {
   value: string;
@@ -251,7 +257,7 @@ async function openAuthSession(
 /*  Client plugin                                                             */
 /* -------------------------------------------------------------------------- */
 
-export const tauriClient = (opts: TauriClientOptions) => {
+export const tauriClient = (opts: TauriClientOptions): TauriClientPlugin => {
   if (!opts.scheme) {
     throw new Error(
       "[better-auth-tauri] `scheme` is required. Pass the custom URI scheme " +
@@ -272,7 +278,7 @@ export const tauriClient = (opts: TauriClientOptions) => {
 
   return {
     id: "tauri",
-    getActions(_, $store) {
+    getActions(_, $store, _options) {
       store = $store;
 
       // Wire up focus + online refetch managers once the store is
