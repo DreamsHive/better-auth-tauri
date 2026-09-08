@@ -33,6 +33,7 @@ jobs:
           bun run typecheck
           bun run test
           bun run build
+          bun run test:packed
 
       - name: Publish to npm
         run: npm publish --access public --provenance

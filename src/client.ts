@@ -272,7 +272,13 @@ export const tauriClient = (opts: TauriClientOptions) => {
 
   return {
     id: "tauri",
-    getActions(_, $store, _options) {
+    // Keep the emitted declaration tied to Better Auth's own fetch type.
+    // Contextual inference alone emits an incompatible standalone BetterFetch.
+    getActions(
+      _: Parameters<NonNullable<BetterAuthClientPlugin["getActions"]>>[0],
+      $store,
+      _options,
+    ) {
       store = $store;
 
       // Wire up focus + online refetch managers once the store is
