@@ -272,7 +272,7 @@ export const tauriClient = (opts: TauriClientOptions) => {
 
   return {
     id: "tauri",
-    getActions(_, $store) {
+    getActions(_, $store, _options) {
       store = $store;
 
       // Wire up focus + online refetch managers once the store is
