@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAuthClient } from "better-auth/client";
+import { createAuthClient } from "better-auth/vue";
 import { tauriClient } from "../src/client";
 
 describe("Better Auth 1.7 client compatibility", () => {

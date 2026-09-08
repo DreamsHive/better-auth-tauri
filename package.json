@@ -72,8 +72,9 @@
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@types/node": "^20.0.0",
     "better-auth": "1.7.3",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "typescript": "6.0.3",
+    "vitest": "^2.1.0",
+    "vue": "^3.5.42"
   },
   "publishConfig": {
     "access": "public"
