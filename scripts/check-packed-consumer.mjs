@@ -28,7 +28,10 @@ try {
   // The requested compatibility target may still be inside a local release-age window.
   // Exempt only Better Auth; do not change the user's global install policy.
   writeFileSync(join(consumer, "bunfig.toml"), '[install]\nminimumReleaseAgeExcludes = ["better-auth", "@better-auth/*"]\n');
-  run("bun", ["install", "--ignore-scripts"], consumer);
+  // Resolve the freshly-packed file dependency into this consumer's lockfile,
+  // then install from that lockfile so local build output cannot mask it.
+  run("bun", ["install", "--lockfile-only", "--ignore-scripts"], consumer);
+  run("bun", ["install", "--frozen-lockfile", "--ignore-scripts"], consumer);
   writeFileSync(join(consumer, "version.ts"), `export const expectedVersion = ${JSON.stringify(manifest.version)};\n`);
   run("node", [join(consumer, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"], consumer);
   run("bun", ["run", "client.ts"], consumer);
