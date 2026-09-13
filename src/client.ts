@@ -115,6 +115,20 @@ function getCookie(cookie: string): string {
   }, "");
 }
 
+function getSessionCookieSignature(cookie: string): string {
+  return cookie
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => {
+      const separator = part.indexOf("=");
+      if (separator < 1) return false;
+      const bare = stripSecureCookiePrefix(part.slice(0, separator));
+      return bare.endsWith("session_token") || bare.endsWith("session_data");
+    })
+    .sort()
+    .join(";");
+}
+
 function getOAuthStateValue(
   cookieJson: string | null,
   cookiePrefix: string | string[],
@@ -269,6 +283,22 @@ export const tauriClient = (opts: TauriClientOptions) => {
   const refetchOnReconnect = opts.refetchOnReconnect !== false;
 
   let store: ClientStore | null = null;
+  let cookieMutation = Promise.resolve();
+  let signOutGeneration = 0;
+
+  async function mutateCookie<T>(mutation: () => Promise<T>): Promise<T> {
+    const previousMutation = cookieMutation;
+    let release: () => void = () => {};
+    cookieMutation = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previousMutation;
+    try {
+      return await mutation();
+    } finally {
+      release();
+    }
+  }
 
   return {
     id: "tauri",
@@ -317,10 +347,27 @@ export const tauriClient = (opts: TauriClientOptions) => {
             const setCookieHeader = context.response.headers.get("set-cookie");
             if (setCookieHeader) {
               if (hasBetterAuthCookies(setCookieHeader, cookiePrefix)) {
-                const prev = await storage.getItem(cookieName);
-                const next = getSetCookie(setCookieHeader, prev ?? undefined);
-                await storage.setItem(cookieName, next);
-                if (hasSessionCookieChanged(prev, next)) {
+                const changed = await mutateCookie(async () => {
+                  const prev = await storage.getItem(cookieName);
+                  const next = getSetCookie(setCookieHeader, prev ?? undefined);
+                  const requestCookie = context.request.headers.get("x-tauri-cookie") ?? "";
+                  const sessionChanged = hasSessionCookieChanged(prev, next);
+
+                  // A delayed request must not change a newer session restored by an
+                  // OAuth callback, replacement, or explicit signout. Checking every
+                  // session change also protects paired token/data cookies independently.
+                  if (
+                    sessionChanged &&
+                    getSessionCookieSignature(requestCookie) !==
+                      getSessionCookieSignature(getCookie(prev ?? "{}"))
+                  ) {
+                    return false;
+                  }
+
+                  await storage.setItem(cookieName, next);
+                  return sessionChanged;
+                });
+                if (changed) {
                   store?.notify("$sessionSignal");
                 }
               }
@@ -330,7 +377,17 @@ export const tauriClient = (opts: TauriClientOptions) => {
               context.request.url.toString().includes("/get-session") &&
               !opts.disableCache
             ) {
-              await storage.setItem(localCacheName, JSON.stringify(context.data));
+              const cacheIsCurrent = await mutateCookie(async () => {
+                const stored = await storage.getItem(cookieName);
+                const requestCookie = context.request.headers.get("x-tauri-cookie") ?? "";
+                return (
+                  getSessionCookieSignature(requestCookie) ===
+                  getSessionCookieSignature(getCookie(stored ?? "{}"))
+                );
+              });
+              if (cacheIsCurrent) {
+                await storage.setItem(localCacheName, JSON.stringify(context.data));
+              }
             }
 
             // Detect social / generic-oauth sign-in AND account-linking
@@ -395,16 +452,22 @@ export const tauriClient = (opts: TauriClientOptions) => {
               params.append("oauthState", oauthStateValue);
             }
             const proxyURL = `${context.request.baseURL}/tauri-authorization-proxy?${params.toString()}`;
+            const callbackGeneration = signOutGeneration;
 
             try {
               const callbackURL = await openAuthSession(proxyURL, scheme);
               const parsed = new URL(callbackURL);
               const cookie = parsed.searchParams.get("cookie");
               if (!cookie) return;
-              const prev = await storage.getItem(cookieName);
-              const next = getSetCookie(cookie, prev ?? undefined);
-              await storage.setItem(cookieName, next);
-              store?.notify("$sessionSignal");
+              const restored = await mutateCookie(async () => {
+                // Explicit signout invalidates a still-open browser OAuth flow.
+                if (callbackGeneration !== signOutGeneration) return false;
+                const prev = await storage.getItem(cookieName);
+                const next = getSetCookie(cookie, prev ?? undefined);
+                await storage.setItem(cookieName, next);
+                return true;
+              });
+              if (restored) store?.notify("$sessionSignal");
             } catch (err) {
               // Re-throw so the caller of signIn.social() sees the failure.
               throw err;
@@ -480,7 +543,10 @@ export const tauriClient = (opts: TauriClientOptions) => {
             // Clear local state on sign-out so the app immediately reflects
             // the logged-out state.
             if (url.includes("/sign-out")) {
-              await storage.setItem(cookieName, "{}");
+              await mutateCookie(async () => {
+                signOutGeneration += 1;
+                await storage.setItem(cookieName, "{}");
+              });
               await storage.setItem(localCacheName, "{}");
               store?.atoms?.session?.set({
                 ...(store.atoms.session.get() as object),

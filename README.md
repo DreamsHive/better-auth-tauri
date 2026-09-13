@@ -54,6 +54,7 @@ Two things worth calling out:
 
 1. **`x-tauri-cookie` header smuggling.** The Fetch spec marks `Cookie` as a [forbidden header name](https://fetch.spec.whatwg.org/#forbidden-header-name). Webviews silently drop attempts to set it. We smuggle the session through `x-tauri-cookie` and the **server** plugin rewrites it back to `Cookie` before Better Auth inspects the request.
 2. **`disableRedirect: true` auto-injection.** Better Auth's Vue/React client normally navigates `window.location.href` to the OAuth URL — fine in a browser, catastrophic in a single-window Tauri app (the webview takes over with the provider's login page). The client plugin injects `disableRedirect: true` into `/sign-in/social` and `/sign-in/oauth2` requests so the client stays put.
+3. **Cookie mutations are serialized.** Response cookies, deep-link callbacks, and signout share one local mutation queue. A delayed response may revoke only the session it was sent with, and an OAuth callback cannot restore a session after explicit signout.
 
 ## Installation
 
