@@ -1,6 +1,6 @@
 {
   "name": "@dreamshive/better-auth-tauri",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Better Auth plugin for Tauri desktop apps — handles OAuth via the system browser with deep-link callbacks, cookie bridging via URL, and secure token storage hooks.",
   "license": "MIT",
   "author": "Rully Ardiansyah",
