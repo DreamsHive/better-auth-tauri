@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { genericOAuth } from "better-auth/plugins";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { tauri } from "../src/index";
 
 /*
@@ -23,9 +23,15 @@ type Row = Record<string, unknown>;
 interface AuthSetup {
   cookiePrefix?: string;
   storeStateStrategy?: "database" | "cookie";
+  /** Adds Google set up for ID token sign-in only (no client secret). */
+  idTokenOnlyGoogle?: boolean;
 }
 
-function createAuth({ cookiePrefix, storeStateStrategy }: AuthSetup = {}) {
+function createAuth({
+  cookiePrefix,
+  storeStateStrategy,
+  idTokenOnlyGoogle,
+}: AuthSetup = {}) {
   const db: Record<"user" | "session" | "account" | "verification", Row[]> = {
     user: [],
     session: [],
@@ -41,6 +47,7 @@ function createAuth({ cookiePrefix, storeStateStrategy }: AuthSetup = {}) {
     advanced: { cookiePrefix },
     socialProviders: {
       github: { clientId: "github-client", clientSecret: "github-secret" },
+      ...(idTokenOnlyGoogle ? { google: { clientId: "google-client" } } : {}),
     },
     plugins: [
       tauri(),
@@ -392,5 +399,39 @@ describe("tauriAuthorizationProxy: stored-state mode (cookie state)", () => {
         oauthState: "stored-state",
       }),
     );
+  });
+});
+
+describe("tauriAuthorizationProxy: provider origins", () => {
+  it("asks a provider that cannot build an authorization URL only once", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const { auth } = createAuth({ idTokenOnlyGoogle: true });
+      const { socialProviders } = await auth.$context;
+      const google = socialProviders.find(({ id }) => id === "google");
+      if (!google) throw new Error("google provider is not configured");
+      const probe = vi.spyOn(google, "createAuthorizationURL");
+
+      for (const _ of [1, 2]) {
+        const { authorizationURL } = await startSocial(auth);
+        const proxied = await proxy(auth, {
+          authorizationURL: authorizationURL.href,
+        });
+        expect(proxied.status).toBe(302);
+        expect(cookiePairs(proxied).has("__Secure-better-auth.state")).toBe(
+          true,
+        );
+      }
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      const googleErrors = consoleError.mock.calls.filter(([message]) =>
+        String(message).includes("Google"),
+      );
+      expect(googleErrors).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

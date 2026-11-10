@@ -12,30 +12,37 @@ interface AuthorizationProvider {
   }) => URL | Promise<URL>;
 }
 
-const providerOrigins = new WeakMap<AuthorizationProvider, string>();
+const providerOrigins = new WeakMap<
+  AuthorizationProvider,
+  Promise<string | null>
+>();
 
 /**
- * The origin a provider sends users to, read from a URL it builds. Only
- * successes are cached, so a provider that fails once is asked again on the
- * next request.
+ * The origin a provider sends users to, read from a URL it builds. Each
+ * provider is asked once and the outcome is kept, failures included, as in
+ * `@better-auth/expo` 1.7.19: a provider set up for ID token sign-in only
+ * (such as Google or Apple without a client secret) cannot build a URL, and
+ * asking again would log the same configuration error on every sign-in.
+ * Generic OAuth providers whose discovery is retried come back as new
+ * provider objects, so they are asked afresh.
  */
-async function getProviderAuthorizationOrigin(
+function getProviderAuthorizationOrigin(
   provider: AuthorizationProvider,
   baseURL: string,
 ): Promise<string | null> {
   const cached = providerOrigins.get(provider);
   if (cached) return cached;
-  try {
-    const url = await provider.createAuthorizationURL({
+  // The async wrapper turns a synchronous throw into a rejection.
+  const origin = (async () =>
+    provider.createAuthorizationURL({
       state: "state",
       codeVerifier: "code-verifier",
       redirectURI: `${baseURL}/callback/${provider.id}`,
-    });
-    providerOrigins.set(provider, url.origin);
-    return url.origin;
-  } catch {
-    return null;
-  }
+    }))()
+    .then((url) => url.origin)
+    .catch(() => null);
+  providerOrigins.set(provider, origin);
+  return origin;
 }
 
 /**
