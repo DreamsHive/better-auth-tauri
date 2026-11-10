@@ -63,6 +63,8 @@ bun add @dreamshive/better-auth-tauri
 # or: npm install / pnpm add / yarn add
 ```
 
+The server plugin requires `better-auth` 1.7.16 or later (the release with the [2026-11-03 security fixes](https://better-auth.com/blog/security-release-2026-11-03)).
+
 Peer Tauri plugins (install only in the desktop app that consumes the client):
 
 ```bash
@@ -180,6 +182,10 @@ The server plugin:
 2. Rewrites `x-tauri-cookie` → `Cookie` so the session cookie smuggled by the client is visible to Better Auth.
 3. Appends `?cookie=<Set-Cookie>` to OAuth redirect URLs targeting custom schemes so the Tauri app can bridge the cookie jar.
 4. Exposes a `/tauri-authorization-proxy` endpoint that plants the OAuth `state` cookie in the system browser's jar before redirecting to the provider (prevents callback state mismatch).
+
+The proxy is a public endpoint, so it acts only on requests a real sign-in produces. It redirects only to an HTTPS URL on the authorization origin of a provider configured in `socialProviders` or `genericOAuth`, and it signs only a `state` this server issued that has not expired. Anything else gets a `400` with no cookie and no redirect. SSO identity providers (`/sign-in/sso`) are not routed through the proxy.
+
+If you ran a version before 0.1.5 with the server plugin enabled, rotate `BETTER_AUTH_SECRET`: those versions signed any `state` they were given, and signatures issued before the fix stay valid until the secret changes.
 
 ### CORS
 
